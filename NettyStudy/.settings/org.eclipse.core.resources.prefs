@@ -1,0 +1,12 @@
+eclipse.preferences.version=1
+encoding//src/com/ssj/netty/TimeServer.java=UTF-8
+encoding//src/com/ssj/netty/TimeServerHandler.java=UTF-8
+encoding//src/com/ssj/netty/custom/protocol/EchoServer.java=UTF-8
+encoding//src/com/ssj/netty/custom/protocol/EchoServerHandler.java=UTF-8
+encoding//src/com/ssj/netty/pkg/TimeServer.java=UTF-8
+encoding//src/com/ssj/netty/pkg/TimeServerHandler.java=UTF-8
+encoding//src/com/ssj/netty/pkg/dec/TimeServer.java=UTF-8
+encoding//src/com/ssj/netty/pkg/dec/TimeServerHandler.java=UTF-8
+encoding//src/com/ssj/netty/pkg/dec/ext/EchoServer.java=UTF-8
+encoding//src/com/ssj/netty/pkg/dec/ext/EchoServerHandler.java=UTF-8
+encoding/<project>=UTF-8
