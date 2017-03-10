@@ -17,6 +17,9 @@ package io.netty.util;
 
 /**
  * Represents a supplier of {@code int}-valued results.
+ * 有两个实现
+ *  EpollEventLoop 中private final IntSupplier selectNowSupplier 
+ *  NioEventLoop 中 private final IntSupplier selectNowSupplier
  */
 public interface IntSupplier {
 

@@ -20,6 +20,8 @@ import io.netty.util.IntSupplier;
 /**
  * Default select strategy.
  */
+//SelectStrategy是一个接口，有一个方法calculateStrategy用来计算选择策略
+//DefaultSelectStrategy是默认的实现，netty中只有一个实现
 final class DefaultSelectStrategy implements SelectStrategy {
     static final SelectStrategy INSTANCE = new DefaultSelectStrategy();
 
@@ -27,6 +29,8 @@ final class DefaultSelectStrategy implements SelectStrategy {
 
     @Override
     public int calculateStrategy(IntSupplier selectSupplier, boolean hasTasks) throws Exception {
+        //如果hasTasks为true，BlockingQueue有数据，则调用selectNow()，没有就绪的返回0，
+        //如果hasTasks为false，则返回SELECT
         return hasTasks ? selectSupplier.get() : SelectStrategy.SELECT;
     }
 }

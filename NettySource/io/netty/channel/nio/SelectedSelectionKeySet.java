@@ -20,10 +20,11 @@ import java.nio.channels.SelectionKey;
 import java.util.AbstractSet;
 import java.util.Iterator;
 
+// 优化选择器key的集合
 final class SelectedSelectionKeySet extends AbstractSet<SelectionKey> {
 
     private SelectionKey[] keysA;
-    private int keysASize;
+    private int keysASize; //A数组的大小
     private SelectionKey[] keysB;
     private int keysBSize;
     private boolean isA = true;
@@ -39,14 +40,14 @@ final class SelectedSelectionKeySet extends AbstractSet<SelectionKey> {
             return false;
         }
 
-        if (isA) {
+        if (isA) { //放在a中
             int size = keysASize;
             keysA[size ++] = o;
             keysASize = size;
-            if (size == keysA.length) {
+            if (size == keysA.length) {//扩容
                 doubleCapacityA();
             }
-        } else {
+        } else { //放在B中
             int size = keysBSize;
             keysB[size ++] = o;
             keysBSize = size;
@@ -58,7 +59,9 @@ final class SelectedSelectionKeySet extends AbstractSet<SelectionKey> {
         return true;
     }
 
+    //容量不足，需要扩容
     private void doubleCapacityA() {
+        //新创建一个2倍大小的数组，将原来的数组拷贝到新数组
         SelectionKey[] newKeysA = new SelectionKey[keysA.length << 1];
         System.arraycopy(keysA, 0, newKeysA, 0, keysASize);
         keysA = newKeysA;
@@ -70,11 +73,14 @@ final class SelectedSelectionKeySet extends AbstractSet<SelectionKey> {
         keysB = newKeysB;
     }
 
+    //切换使用的数组，
+    //假如使用的是A，将A的下一个元素设置为null，并将B的大小设置为0，切换到B
+    //之后添加元素时会添加到B中，从第一个开始。注意B未清空
     SelectionKey[] flip() {
-        if (isA) {
+        if (isA) { 
             isA = false;
-            keysA[keysASize] = null;
-            keysBSize = 0;
+            keysA[keysASize] = null;//下一个元素为null
+            keysBSize = 0;//
             return keysA;
         } else {
             isA = true;
@@ -94,17 +100,17 @@ final class SelectedSelectionKeySet extends AbstractSet<SelectionKey> {
     }
 
     @Override
-    public boolean remove(Object o) {
+    public boolean remove(Object o) {//不能移出
         return false;
     }
 
     @Override
-    public boolean contains(Object o) {
+    public boolean contains(Object o) {//没啥用
         return false;
     }
 
     @Override
-    public Iterator<SelectionKey> iterator() {
+    public Iterator<SelectionKey> iterator() { //不支持
         throw new UnsupportedOperationException();
     }
 }
