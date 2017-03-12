@@ -145,6 +145,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         }
 
         //所有属性，channel有AttributeMap，保存属性map，默认是DefaultAttributeMap
+        // channel 继承了DefaultAttributeMap
         final Map<AttributeKey<?>, Object> attrs = attrs0(); 
         synchronized (attrs) {
             for (Entry<AttributeKey<?>, Object> e: attrs.entrySet()) {
@@ -154,7 +155,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
             }
         }
 
-        ChannelPipeline p = channel.pipeline(); // channel都有pipeline
+        ChannelPipeline p = channel.pipeline(); // channel都有pipeline ，AbstractChannel中 return new DefaultChannelPipeline(this);
 
         final EventLoopGroup currentChildGroup = childGroup;
         final ChannelHandler currentChildHandler = childHandler;

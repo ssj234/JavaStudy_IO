@@ -294,9 +294,9 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
             return promise;
         } else {
             // Registration future is almost always fulfilled already, but just in case it's not.
-            //
+            // 等待注册的Promiose，因为刚才只是将注册任务提交到了线程池
             final PendingRegistrationPromise promise = new PendingRegistrationPromise(channel);
-            // DefaultChannelPromise
+            // regFuture是提交到线程池时返回的DefaultChannelPromise，为其添加一个监听事件，结束后执行
             regFuture.addListener(new ChannelFutureListener() {
                 @Override
                 public void operationComplete(ChannelFuture future) throws Exception {
@@ -331,7 +331,8 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
             // as the Channel is not registered yet we need to force the usage of the GlobalEventExecutor
             return new DefaultChannelPromise(channel, GlobalEventExecutor.INSTANCE).setFailure(t);
         }
-
+        // ServerBootStrap ServerBootstrapConfig NioEventLoopGroup@1 
+        //      register在SingleThreadEventLoop中，将channel注册到eventloop中
         ChannelFuture regFuture = config().group().register(channel); // DefaultChannelPromise
         if (regFuture.cause() != null) {
             if (channel.isRegistered()) {

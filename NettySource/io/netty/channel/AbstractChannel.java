@@ -452,26 +452,26 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         }
 
         @Override
-        public final void register(EventLoop eventLoop, final ChannelPromise promise) {
+        public final void register(EventLoop eventLoop, final ChannelPromise promise) { //将channel注册到eventLoop
             if (eventLoop == null) {
                 throw new NullPointerException("eventLoop");
             }
-            if (isRegistered()) {
+            if (isRegistered()) { //已经注册了
                 promise.setFailure(new IllegalStateException("registered to an event loop already"));
                 return;
             }
-            if (!isCompatible(eventLoop)) {
+            if (!isCompatible(eventLoop)) { //检查eventloop AbstractNioChannel中重写了，必须是NioEventLoop
                 promise.setFailure(
                         new IllegalStateException("incompatible event loop type: " + eventLoop.getClass().getName()));
                 return;
             }
 
-            AbstractChannel.this.eventLoop = eventLoop;
+            AbstractChannel.this.eventLoop = eventLoop; //设置channel的eventloop 【main中设置的第一个eventloop】
 
-            if (eventLoop.inEventLoop()) {
+            if (eventLoop.inEventLoop()) { // 当前线程是否在eventLoop中
                 register0(promise);
             } else {
-                try {
+                try { //提交到 线程池中
                     eventLoop.execute(new Runnable() {
                         @Override
                         public void run() {

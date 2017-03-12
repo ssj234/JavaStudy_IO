@@ -70,17 +70,19 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
     }
 
     @Override
-    public ChannelFuture register(Channel channel) {
+    public ChannelFuture register(Channel channel) {  //为线程组注册 channel
         // channel = NioSocketChannel
         // this NioEventLoop
         //调用
-        return register(new DefaultChannelPromise(channel, this));
+        return register(new DefaultChannelPromise(channel, this)); //创建一个Promise
     }
 
     @Override
     public ChannelFuture register(final ChannelPromise promise) {
         ObjectUtil.checkNotNull(promise, "promise");
         //调用AbstractChannel的register方法
+        // unsafe在初始化时，构造方法  AbstractNioMessageChannel return new NioMessageUnsafe();
+        // NioMessageUnsafe也是channel啊... register在AbstractChannel
         promise.channel().unsafe().register(this, promise);
         return promise;
     }
