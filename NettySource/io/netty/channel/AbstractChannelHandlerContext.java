@@ -139,6 +139,7 @@ abstract class AbstractChannelHandlerContext extends DefaultAttributeMap
         return this;
     }
 
+    //触发注册事件，从head 到tail
     static void invokeChannelRegistered(final AbstractChannelHandlerContext next) {
         EventExecutor executor = next.executor();
         if (executor.inEventLoop()) {
@@ -348,13 +349,15 @@ abstract class AbstractChannelHandlerContext extends DefaultAttributeMap
 
     @Override
     public ChannelHandlerContext fireChannelRead(final Object msg) {
+        //findContextInbound 因为这是read，所以遍历pipeline的context链表，查找inbound的
         invokeChannelRead(findContextInbound(), msg);
         return this;
     }
 
     static void invokeChannelRead(final AbstractChannelHandlerContext next, Object msg) {
         final Object m = next.pipeline.touch(ObjectUtil.checkNotNull(msg, "msg"), next);
-        EventExecutor executor = next.executor();
+        EventExecutor executor = next.executor(); // next是DefaultChannelPipeline$HeadContext，返回NioEventLoop
+        //其实就是看看next是否有executor，没有的话用当前的executor NioEventLoop
         if (executor.inEventLoop()) {
             next.invokeChannelRead(m);
         } else {
@@ -368,14 +371,18 @@ abstract class AbstractChannelHandlerContext extends DefaultAttributeMap
     }
 
     private void invokeChannelRead(Object msg) {
-        if (invokeHandler()) {
+        if (invokeHandler()) { //handleContext 内部有处理状态，如果只选完成的话
             try {
+                // HeadContext extends AbstractChannelHandlerContext 
+                // implements ChannelOutboundHandler, ChannelInboundHandler
+                // Pipeline里有一个HandlerContext的链表
+                //调用了ctx.fireChannelRead(msg);--->fireChannelRead , LINE 350
                 ((ChannelInboundHandler) handler()).channelRead(this, msg);
             } catch (Throwable t) {
                 notifyHandlerException(t);
             }
         } else {
-            fireChannelRead(msg);
+            fireChannelRead(msg); //
         }
     }
 

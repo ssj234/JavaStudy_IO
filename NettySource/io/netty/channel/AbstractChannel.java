@@ -497,20 +497,20 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                     return;
                 }
                 boolean firstRegistration = neverRegistered;
-                doRegister();
+                doRegister();//java原生channel上面注册操作
                 neverRegistered = false;
                 registered = true;
 
                 // Ensure we call handlerAdded(...) before we actually notify the promise. This is needed as the
                 // user may already fire events through the pipeline in the ChannelFutureListener.
-                pipeline.invokeHandlerAddedIfNeeded();
+                pipeline.invokeHandlerAddedIfNeeded(); // 调用pipeline的invokeHandlerAddedIfNeeded，设置channel已经注册了registered
 
-                safeSetSuccess(promise);
-                pipeline.fireChannelRegistered();
+                safeSetSuccess(promise);//
+                pipeline.fireChannelRegistered(); //触发注册事件
                 // Only fire a channelActive if the channel has never been registered. This prevents firing
                 // multiple channel actives if the channel is deregistered and re-registered.
-                if (isActive()) {
-                    if (firstRegistration) {
+                if (isActive()) { //NioSocketChannel  ch.isOpen() && ch.isConnected();
+                    if (firstRegistration) { // 第一次注册了 触发active
                         pipeline.fireChannelActive();
                     } else if (config().isAutoRead()) {
                         // This channel was registered before and autoRead() is set. This means we need to begin read

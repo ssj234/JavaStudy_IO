@@ -55,6 +55,7 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
         super.doBeginRead();
     }
 
+    //unsafe 类
     private final class NioMessageUnsafe extends AbstractNioUnsafe {
 
         private final List<Object> readBuf = new ArrayList<Object>();
@@ -62,25 +63,32 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
         @Override
         public void read() {
             assert eventLoop().inEventLoop();
-            final ChannelConfig config = config();
-            final ChannelPipeline pipeline = pipeline();
-            final RecvByteBufAllocator.Handle allocHandle = unsafe().recvBufAllocHandle();
-            allocHandle.reset(config);
+            final ChannelConfig config = config(); //config方法在channel接口定义，channel为NioServerSocketChannel
+            final ChannelPipeline pipeline = pipeline(); //DefaultChannelPipeline  AbstractChannel中
+            //unsafe在NioMessageUnsafe中，recvBufAllocHandle在AbstractChannel
+            //config().getRecvByteBufAllocator().newHandle();
+            //      config()=NioServerSocketChannelConfig DefaultChannelConfig
+            //      getRecvByteBufAllocator() =AdaptiveRecvByteBufAllocator
+            //      newHandle = AdaptiveRecvByteBufAllocator.HandleImpl extends MaxMessageHandle
+            final RecvByteBufAllocator.Handle allocHandle = unsafe().recvBufAllocHandle(); 
+            allocHandle.reset(config); // 
 
             boolean closed = false;
             Throwable exception = null;
             try {
                 try {
-                    do {
-                        int localRead = doReadMessages(readBuf);
-                        if (localRead == 0) {
+                    do { //一直循环？ 难道是为了一直接收连接
+                        int localRead = doReadMessages(readBuf); //doReadMessages根据channel不同， NioServerSocketChannel
+                        //NioServerSocketChannel-accept成功会返回1
+                        if (localRead == 0) { 
                             break;
                         }
                         if (localRead < 0) {
                             closed = true;
                             break;
                         }
-
+                        //AdaptiveRecvByteBufAllocator$HandleImpl 
+                        //incMessagesRead在DefaultMaxMessagesRecvByteBufAllocator中定义
                         allocHandle.incMessagesRead(localRead);
                     } while (allocHandle.continueReading());
                 } catch (Throwable t) {
@@ -89,8 +97,9 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
 
                 int size = readBuf.size();
                 for (int i = 0; i < size; i ++) {
-                    readPending = false;
-                    pipeline.fireChannelRead(readBuf.get(i));
+                    readPending = false;  //这个变量一会看看是干啥的
+                    //DefaultChannelPipeline
+                    pipeline.fireChannelRead(readBuf.get(i)); 
                 }
                 readBuf.clear();
                 allocHandle.readComplete();

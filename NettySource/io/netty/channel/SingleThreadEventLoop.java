@@ -71,12 +71,16 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
 
     @Override
     public ChannelFuture register(Channel channel) {
+        // channel = NioSocketChannel
+        // this NioEventLoop
+        //调用
         return register(new DefaultChannelPromise(channel, this));
     }
 
     @Override
     public ChannelFuture register(final ChannelPromise promise) {
         ObjectUtil.checkNotNull(promise, "promise");
+        //调用AbstractChannel的register方法
         promise.channel().unsafe().register(this, promise);
         return promise;
     }
@@ -135,7 +139,7 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
 
     @Override
     protected void afterRunningAllTasks() {
-        runAllTasksFrom(tailTasks);
+        runAllTasksFrom(tailTasks); //
     }
 
     @Override

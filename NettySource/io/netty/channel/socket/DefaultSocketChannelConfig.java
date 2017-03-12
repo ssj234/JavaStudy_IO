@@ -101,7 +101,7 @@ public class DefaultSocketChannelConfig extends DefaultChannelConfig
     @Override
     public <T> boolean setOption(ChannelOption<T> option, T value) {
         validate(option, value);
-
+        //下面是一些 javasocket的配置
         if (option == SO_RCVBUF) {
             setReceiveBufferSize((Integer) value);
         } else if (option == SO_SNDBUF) {
@@ -119,7 +119,7 @@ public class DefaultSocketChannelConfig extends DefaultChannelConfig
         } else if (option == ALLOW_HALF_CLOSURE) {
             setAllowHalfClosure((Boolean) value);
         } else {
-            return super.setOption(option, value);
+            return super.setOption(option, value); //DefaultChannelConfig中设置netty自己定义的一些配置
         }
 
         return true;

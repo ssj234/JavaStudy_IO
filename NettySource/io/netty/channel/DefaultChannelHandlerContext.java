@@ -17,6 +17,15 @@ package io.netty.channel;
 
 import io.netty.util.concurrent.EventExecutor;
 
+
+//DefaultChannelPipeline$HeadContext
+//  final class HeadContext extends AbstractChannelHandlerContext implements ChannelOutboundHandler, ChannelInboundHandler
+//DefaultChannelPipeline$TailContext
+//  final class TailContext extends AbstractChannelHandlerContext implements ChannelInboundHandler
+//DefaultChannelHandlerContext
+// 一共有三种类型的HadnlerContext，内部有handler，还有EventExecutor
+// Pipeline 有一个双向链表 head(HeadContext)-> default1 -> default1 ->... -> tail(TailContext)
+
 final class DefaultChannelHandlerContext extends AbstractChannelHandlerContext {
 
     private final ChannelHandler handler;
@@ -35,10 +44,11 @@ final class DefaultChannelHandlerContext extends AbstractChannelHandlerContext {
         return handler;
     }
 
+    //是 输入
     private static boolean isInbound(ChannelHandler handler) {
         return handler instanceof ChannelInboundHandler;
     }
-
+    //还是 输出
     private static boolean isOutbound(ChannelHandler handler) {
         return handler instanceof ChannelOutboundHandler;
     }

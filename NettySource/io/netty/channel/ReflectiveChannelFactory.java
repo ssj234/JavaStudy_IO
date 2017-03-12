@@ -18,12 +18,13 @@ package io.netty.channel;
 
 import io.netty.util.internal.StringUtil;
 
+// 这个类通过class对象获取channel的实例
 /**
  * A {@link ChannelFactory} that instantiates a new {@link Channel} by invoking its default constructor reflectively.
  */
 public class ReflectiveChannelFactory<T extends Channel> implements ChannelFactory<T> {
 
-    private final Class<? extends T> clazz;
+    private final Class<? extends T> clazz; //构造函数传入class
 
     public ReflectiveChannelFactory(Class<? extends T> clazz) {
         if (clazz == null) {
@@ -35,7 +36,7 @@ public class ReflectiveChannelFactory<T extends Channel> implements ChannelFacto
     @Override
     public T newChannel() {
         try {
-            return clazz.newInstance();
+            return clazz.newInstance(); //反射 通过Class对象的newInstance
         } catch (Throwable t) {
             throw new ChannelException("Unable to create Channel from class " + clazz, t);
         }

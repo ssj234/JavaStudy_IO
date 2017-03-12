@@ -139,12 +139,13 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
 
     @Override
     void init(Channel channel) throws Exception {
-        final Map<ChannelOption<?>, Object> options = options0();
+        final Map<ChannelOption<?>, Object> options = options0(); // 启动器的options数组
         synchronized (options) {
-            channel.config().setOptions(options);
+            channel.config().setOptions(options); // channel都有其对应的ChannelConfig类
         }
 
-        final Map<AttributeKey<?>, Object> attrs = attrs0();
+        //所有属性，channel有AttributeMap，保存属性map，默认是DefaultAttributeMap
+        final Map<AttributeKey<?>, Object> attrs = attrs0(); 
         synchronized (attrs) {
             for (Entry<AttributeKey<?>, Object> e: attrs.entrySet()) {
                 @SuppressWarnings("unchecked")
@@ -153,7 +154,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
             }
         }
 
-        ChannelPipeline p = channel.pipeline();
+        ChannelPipeline p = channel.pipeline(); // channel都有pipeline
 
         final EventLoopGroup currentChildGroup = childGroup;
         final ChannelHandler currentChildHandler = childHandler;
@@ -165,13 +166,13 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         synchronized (childAttrs) {
             currentChildAttrs = childAttrs.entrySet().toArray(newAttrArray(childAttrs.size()));
         }
-
+        // ServerBootstrap的init方法，会添加一个
         p.addLast(new ChannelInitializer<Channel>() {
             @Override
             public void initChannel(Channel ch) throws Exception {
                 final ChannelPipeline pipeline = ch.pipeline();
                 ChannelHandler handler = config.handler();
-                if (handler != null) {
+                if (handler != null) { //handler不为null则加入last
                     pipeline.addLast(handler);
                 }
 
@@ -181,7 +182,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
                 // placed in front of the ServerBootstrapAcceptor.
                 ch.eventLoop().execute(new Runnable() {
                     @Override
-                    public void run() {
+                    public void run() { // 默认添加ServerBootstrapAcceptor
                         pipeline.addLast(new ServerBootstrapAcceptor(
                                 currentChildGroup, currentChildHandler, currentChildOptions, currentChildAttrs));
                     }
@@ -232,10 +233,13 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         @Override
         @SuppressWarnings("unchecked")
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
-            final Channel child = (Channel) msg;
+            final Channel child = (Channel) msg;//msg是accept时返回的NioSocketChannel
+            //为handler创建一个ctx，加入到pipeline的链表中
+            child.pipeline().addLast(childHandler);//这是用户设置的childHandler，pipeline是DefaultChannelPipeline
 
-            child.pipeline().addLast(childHandler);
-
+            // child是NioSocketChannel
+            // child的config()是NioSocketChannelConfig,是NioSocketChannel的内部类
+            //主要包括设置javasocket的一些配置和netty的一些配置
             for (Entry<ChannelOption<?>, Object> e: childOptions) {
                 try {
                     if (!child.config().setOption((ChannelOption<Object>) e.getKey(), e.getValue())) {
@@ -245,12 +249,15 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
                     logger.warn("Failed to set a channel option: " + child, t);
                 }
             }
-
+            // 设置属性 DefaultAttributeMap类，AbstractChannel是其字类，也就是说channel都有属性map
+            // DefaultAttributeMap类中维护了一个 DefaultAttribute的链表
             for (Entry<AttributeKey<?>, Object> e: childAttrs) {
                 child.attr((AttributeKey<Object>) e.getKey()).set(e.getValue());
             }
 
             try {
+                // childGroup我们都知道 设置了NioEventLoopGroup，register在MultithreadEventLoopGroup中
+                //
                 childGroup.register(child).addListener(new ChannelFutureListener() {
                     @Override
                     public void operationComplete(ChannelFuture future) throws Exception {

@@ -63,7 +63,7 @@ public abstract class DefaultMaxMessagesRecvByteBufAllocator implements MaxMessa
          */
         @Override
         public void reset(ChannelConfig config) {
-            this.config = config;
+            this.config = config; //config w为io.netty.channel.socket.nio.NioServerSocketChannel$NioServerSocketChannelConfig@116e9d8
             maxMessagePerRead = maxMessagesPerRead();
             totalMessages = totalBytesRead = 0;
         }
@@ -74,7 +74,7 @@ public abstract class DefaultMaxMessagesRecvByteBufAllocator implements MaxMessa
         }
 
         @Override
-        public final void incMessagesRead(int amt) {
+        public final void incMessagesRead(int amt) { //总消息数加1
             totalMessages += amt;
         }
 

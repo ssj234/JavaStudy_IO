@@ -68,7 +68,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     private final IntSupplier selectNowSupplier = new IntSupplier() {
         @Override
         public int get() throws Exception {
-            return selectNow(); //如果没有，返回为0
+            return selectNow(); //如果没有，返回为0,否则返回准备就绪操作集的键的数目
         }
     };
     private final Callable<Integer> pendingTasksCallable = new Callable<Integer>() {
@@ -408,7 +408,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
 
     @Override
     protected void run() {
-        for (;;) {  //一直不断的循环
+        for (;;) {  //一直不断的循环，最终选择select 在调用runAllTasks 在SingleThreadEventExecutor
             try {
                 //hasTasks定义在SingleThreadEventLoop中
                 switch (selectStrategy.calculateStrategy(selectNowSupplier, hasTasks())) {
@@ -445,7 +445,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                         // the first case (BAD - wake-up required) and the second case
                         // (OK - no wake-up required).
 
-                        if (wakenUp.get()) {
+                        if (wakenUp.get()) {//这里肯定是false啊... 
                             selector.wakeup();
                         }
                     default: //默认啥也不干
@@ -502,9 +502,9 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     }
 
     private void processSelectedKeys() {
-        if (selectedKeys != null) {//如果优化了的话，翻转一下
+        if (selectedKeys != null) {//如果优化了的话，翻转一下,优化方法
             processSelectedKeysOptimized(selectedKeys.flip());
-        } else {
+        } else { // select的
             processSelectedKeysPlain(selector.selectedKeys());
         }
     }
@@ -576,19 +576,20 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         }
     }
 
+    //优化方法
     private void processSelectedKeysOptimized(SelectionKey[] selectedKeys) {
-        for (int i = 0;; i ++) {
+        for (int i = 0;; i ++) { //遍历处理
             final SelectionKey k = selectedKeys[i];
             if (k == null) {//遇到null的就退出了
                 break;
             }
             // null out entry in the array to allow to have it GC'ed once the Channel close
             // See https://github.com/netty/netty/issues/2363
-            selectedKeys[i] = null;
+            selectedKeys[i] = null; //取完将数组设置为null
 
-            final Object a = k.attachment();//获取传入的数据，attach()方法附加进去的
+            final Object a = k.attachment();//获取传入的数据，attach()方法附加进去的，【啥时候？】找到了，是AbstractChannel的register方法的register0注册进去的
 
-            if (a instanceof AbstractNioChannel) {
+            if (a instanceof AbstractNioChannel) { // 是这个NioServerSocketChannel 
                 processSelectedKey(k, (AbstractNioChannel) a);
             } else {
                 @SuppressWarnings("unchecked")
@@ -620,11 +621,13 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     }
 
     private void processSelectedKey(SelectionKey k, AbstractNioChannel ch) {
+        // io.netty.channel.Channel.Unsafe
+        //io.netty.channel.nio.AbstractNioChannel.NioUnsafe
         final AbstractNioChannel.NioUnsafe unsafe = ch.unsafe();
-        if (!k.isValid()) {
+        if (!k.isValid()) { //此键是否有效 【无效】
             final EventLoop eventLoop;
             try {
-                eventLoop = ch.eventLoop();
+                eventLoop = ch.eventLoop(); // channel 里面有eventLoop
             } catch (Throwable ignored) {
                 // If the channel implementation throws an exception because there is no event loop, we ignore this
                 // because we are only trying to determine if ch is registered to this event loop and thus has authority
@@ -639,20 +642,27 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                 return;
             }
             // close the channel if the key is not valid anymore
-            unsafe.close(unsafe.voidPromise());
+            //关闭ChannelPromise的channel
+            unsafe.close(unsafe.voidPromise()); //
             return;
         }
-
+        //SelectionKey 是valid的 https://my.oschina.net/xinxingegeya/blog/390459
         try {
-            int readyOps = k.readyOps();
+            int readyOps = k.readyOps();  // 获取此键的 ready 操作集合。
             // We first need to call finishConnect() before try to trigger a read(...) or write(...) as otherwise
             // the NIO JDK channel implementation may throw a NotYetConnectedException.
-            if ((readyOps & SelectionKey.OP_CONNECT) != 0) {
+            
+            // Accept 16 1000
+            // Connect 8  100
+            // Write   4   10
+            // Read    1    1
+            if ((readyOps & SelectionKey.OP_CONNECT) != 0) { // 如果是连接事件
                 // remove OP_CONNECT as otherwise Selector.select(..) will always return without blocking
                 // See https://github.com/netty/netty/issues/924
+                // interest集合是你所选择的感兴趣的事件集合
                 int ops = k.interestOps();
                 ops &= ~SelectionKey.OP_CONNECT;
-                k.interestOps(ops);
+                k.interestOps(ops); //
 
                 unsafe.finishConnect();
             }
@@ -666,7 +676,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             // Also check for readOps of 0 to workaround possible JDK bug which may otherwise lead
             // to a spin loop
             if ((readyOps & (SelectionKey.OP_READ | SelectionKey.OP_ACCEPT)) != 0 || readyOps == 0) {
-                unsafe.read();
+                unsafe.read();// unsafe 是NioMessageUnsafe  AbstractNioMessageChannel中的子类 
                 if (!ch.isOpen()) {
                     // Connection already closed - no need to handle write.
                     return;
@@ -757,35 +767,40 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         }
     }
 
+    //SELECT时调用（无任务）
     private void select(boolean oldWakenUp) throws IOException {
         Selector selector = this.selector;
         try {
             int selectCnt = 0;
             long currentTimeNanos = System.nanoTime();
             //delayNanos定义在SingleThreadEventExecutor中
-            //意思应该是任务还要持续的时间
+            //意思应该是任务还要持续的时间，无任务的话是1ns，有任务的话是ScheduledFutureTask，到达deadlineNanos的时间
             long selectDeadLineNanos = currentTimeNanos + delayNanos(currentTimeNanos);
             for (;;) {
+                //1s = 1^3 ms = 1^6 us = 10^9 nm
                 long timeoutMillis = (selectDeadLineNanos - currentTimeNanos + 500000L) / 1000000L;
-                if (timeoutMillis <= 0) { //selectDeadLineNanos - currentTimeNanos小于500000L
+                //如果剩余时间不足0.5us 
+                if (timeoutMillis <= 0) { //selectDeadLineNanos - currentTimeNanos小于500000L 0.5us
                     if (selectCnt == 0) {
                         selector.selectNow(); //立刻查询一次
                         selectCnt = 1;
                     }
                     break;
                 }
-
+                //时间还多，大于0.5us
                 // If a task was submitted when wakenUp value was true, the task didn't get a chance to call
                 // Selector#wakeup. So we need to check task queue again before executing select operation.
                 // If we don't, the task might be pended until select operation was timed out.
                 // It might be pended until idle timeout if IdleStateHandler existed in pipeline.
+                
                 //如果有任务，将wakenUp设置为true
                 if (hasTasks() && wakenUp.compareAndSet(false, true)) {
                     selector.selectNow();
                     selectCnt = 1;
                     break;
                 }
-                //select并设置超时
+
+                //无任务，时间还多，select并设置超时
                 int selectedKeys = selector.select(timeoutMillis);
                 selectCnt ++;
                 //如果有就绪的key，传入的oldWakenUp为true
@@ -799,7 +814,8 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                     // - a scheduled task is ready for processing
                     break;
                 }
-                if (Thread.interrupted()) {
+
+                if (Thread.interrupted()) { //测试线程是否已经中断
                     // Thread was interrupted so reset selected keys and break so we not run into a busy loop.
                     // As this is most likely a bug in the handler of the user or it's client library we will
                     // also log it.

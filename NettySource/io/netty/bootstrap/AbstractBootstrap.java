@@ -49,7 +49,9 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
 
     volatile EventLoopGroup group;
     @SuppressWarnings("deprecation")
-    private volatile ChannelFactory<? extends C> channelFactory;
+    //设置ChannelFactory，ChannelFactory有newChannel()方法，返回指定的Channel实例
+    // ReflectiveChannelFactory 设置Class对象，newChannel()方法返回class的实例
+    private volatile ChannelFactory<? extends C> channelFactory; 
     private volatile SocketAddress localAddress;
     private final Map<ChannelOption<?>, Object> options = new LinkedHashMap<ChannelOption<?>, Object>();
     private final Map<AttributeKey<?>, Object> attrs = new LinkedHashMap<AttributeKey<?>, Object>();
@@ -168,12 +170,12 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         if (option == null) {
             throw new NullPointerException("option");
         }
-        if (value == null) {
+        if (value == null) { //如果value为null，则移除key
             synchronized (options) {
                 options.remove(option);
             }
         } else {
-            synchronized (options) {
+            synchronized (options) { //设置key-value
                 options.put(option, value);
             }
         }
@@ -190,7 +192,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
             throw new NullPointerException("key");
         }
         if (value == null) {
-            synchronized (attrs) {
+            synchronized (attrs) { //设置attr
                 attrs.remove(key);
             }
         } else {
@@ -206,7 +208,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
      * call the super method in that case.
      */
     @SuppressWarnings("unchecked")
-    public B validate() {
+    public B validate() { // EventLoopGroup不能空，ChannelFactory不能为空
         if (group == null) {
             throw new IllegalStateException("group not set");
         }
@@ -223,7 +225,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
      */
     @Override
     @SuppressWarnings("CloneDoesntDeclareCloneNotSupportedException")
-    public abstract B clone();
+    public abstract B clone(); //clonable接口
 
     /**
      * Create a new {@link Channel} and register it with an {@link EventLoop}.
@@ -237,7 +239,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
      * Create a new {@link Channel} and bind it.
      */
     public ChannelFuture bind() {
-        validate();
+        validate(); //校验
         SocketAddress localAddress = this.localAddress;
         if (localAddress == null) {
             throw new IllegalStateException("localAddress not set");
@@ -277,8 +279,9 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         return doBind(localAddress);
     }
 
+    // 实际的绑定方法
     private ChannelFuture doBind(final SocketAddress localAddress) {
-        final ChannelFuture regFuture = initAndRegister();
+        final ChannelFuture regFuture = initAndRegister(); // 注册channel
         final Channel channel = regFuture.channel();
         if (regFuture.cause() != null) {
             return regFuture;
@@ -291,7 +294,9 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
             return promise;
         } else {
             // Registration future is almost always fulfilled already, but just in case it's not.
+            //
             final PendingRegistrationPromise promise = new PendingRegistrationPromise(channel);
+            // DefaultChannelPromise
             regFuture.addListener(new ChannelFutureListener() {
                 @Override
                 public void operationComplete(ChannelFuture future) throws Exception {
@@ -316,8 +321,8 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     final ChannelFuture initAndRegister() {
         Channel channel = null;
         try {
-            channel = channelFactory.newChannel();
-            init(channel);
+            channel = channelFactory.newChannel(); //创建channel实例
+            init(channel); // 初始化channel ServerBootStrap 或 BootStrap
         } catch (Throwable t) {
             if (channel != null) {
                 // channel can be null if newChannel crashed (eg SocketException("too many open files"))
@@ -327,7 +332,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
             return new DefaultChannelPromise(channel, GlobalEventExecutor.INSTANCE).setFailure(t);
         }
 
-        ChannelFuture regFuture = config().group().register(channel);
+        ChannelFuture regFuture = config().group().register(channel); // DefaultChannelPromise
         if (regFuture.cause() != null) {
             if (channel.isRegistered()) {
                 channel.close();

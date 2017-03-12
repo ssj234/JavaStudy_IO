@@ -32,6 +32,7 @@ public final class DefaultEventExecutorChooserFactory implements EventExecutorCh
     @SuppressWarnings("unchecked")
     @Override
     public EventExecutorChooser newChooser(EventExecutor[] executors) {
+        // 如果是2的n次方，返回PowerOfTowEventExecutorChooser
         if (isPowerOfTwo(executors.length)) {
             return new PowerOfTowEventExecutorChooser(executors);
         } else {
@@ -43,6 +44,7 @@ public final class DefaultEventExecutorChooserFactory implements EventExecutorCh
         return (val & -val) == val;
     }
 
+    //这两者选择器看起来没啥区别啊，一个是从0-7-0，另外一个也是
     private static final class PowerOfTowEventExecutorChooser implements EventExecutorChooser {
         private final AtomicInteger idx = new AtomicInteger();
         private final EventExecutor[] executors;

@@ -284,13 +284,14 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
         }
     }
 
+    //从scheduledTaskQueue取 加入到taskQueue
     private boolean fetchFromScheduledTaskQueue() {
         long nanoTime = AbstractScheduledEventExecutor.nanoTime();
-        Runnable scheduledTask  = pollScheduledTask(nanoTime);
+        Runnable scheduledTask  = pollScheduledTask(nanoTime); //scheduledTaskQueue.peek()获取任务 ScheduledFutureTask
         while (scheduledTask != null) {
-            if (!taskQueue.offer(scheduledTask)) {
+            if (!taskQueue.offer(scheduledTask)) { // 加入到taskQueue，加入失败，再加回到scheduledTaskQueue
                 // No space left in the task queue add it back to the scheduledTaskQueue so we pick it up again.
-                scheduledTaskQueue().add((ScheduledFutureTask<?>) scheduledTask);
+                scheduledTaskQueue().add((ScheduledFutureTask<?>) scheduledTask); // scheduledTaskQueued队列
                 return false;
             }
             scheduledTask  = pollScheduledTask(nanoTime);
@@ -386,7 +387,7 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
      * @return {@code true} if atleast one task was executed.
      */
     protected final boolean runAllTasksFrom(Queue<Runnable> taskQueue) {
-        Runnable task = pollTaskFrom(taskQueue);
+        Runnable task = pollTaskFrom(taskQueue); //从taskQueue取数据
         if (task == null) {
             return false;
         }
@@ -404,10 +405,10 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
      * the tasks in the task queue and returns if it ran longer than {@code timeoutNanos}.
      */
     protected boolean runAllTasks(long timeoutNanos) {
-        fetchFromScheduledTaskQueue();
-        Runnable task = pollTask();
+        fetchFromScheduledTaskQueue(); // scheduledTaskQueue --> taskQueue
+        Runnable task = pollTask(); //taskQueue 取任务
         if (task == null) {
-            afterRunningAllTasks();
+            afterRunningAllTasks(); //SingleThreadEventLoop中 runAllTasksFrom
             return false;
         }
 
