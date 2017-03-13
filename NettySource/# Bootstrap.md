@@ -86,7 +86,7 @@ childOption() 设置NioSocketChannel的选项
 childAttr() 设置NioSocketChannel的属性
 childHandler() 设置NioSocketChannel的处理器
 ```
-除此之外，还包括一个内部类ServerBootstrapAcceptor，这是一个ChannelHandler，会在register时加入Pipeline中。
+除此之外，还包括一个内部类ServerBootstrapAcceptor，这是一个ChannelHandler，会在register时加入Pipeline中。主要用来接收客户端的请求，后续章节会进行详细说明。
 
 ### 准备代码
 
@@ -474,14 +474,133 @@ public final ChannelPipeline fireChannelRegistered() {
 ```
 
 
+### Bootstrap
 
+Bootstrap以connect开始，connect有多个方法，最终会调用如下方法：
+```
+public ChannelFuture connect(SocketAddress remoteAddress) {
+        if (remoteAddress == null) {
+            throw new NullPointerException("remoteAddress");
+        }
 
-## 3. 补充
+        validate();
+        return doResolveAndConnect(remoteAddress, config.localAddress());
+    }
+```
+doResolveAndConnect
+1.调用initAndRegister()，与ServerBootstrap的initAndRegister方法一样，主要是为了初始化channel，并注册到线程池和pipeline中。不同的是init方不同，Bootstrap的init方法只需要设置option和attr。
+2.调用doResolveAndConnect0方法
+
+```
+private ChannelFuture doResolveAndConnect(final SocketAddress remoteAddress, final SocketAddress localAddress) {
+        final ChannelFuture regFuture = initAndRegister();
+        final Channel channel = regFuture.channel();
+
+        if (regFuture.isDone()) {//如果注册成功
+            if (!regFuture.isSuccess()) {//注册失败
+                return regFuture;
+            }
+            return doResolveAndConnect0(channel, remoteAddress, localAddress, channel.newPromise());
+        } else { //还未完成
+            // Registration future is almost always fulfilled already, but just in case it's not.
+            final PendingRegistrationPromise promise = new PendingRegistrationPromise(channel);
+            regFuture.addListener(new ChannelFutureListener() {
+                @Override
+                public void operationComplete(ChannelFuture future) throws Exception {
+                    
+                    Throwable cause = future.cause();
+                    if (cause != null) {
+                        promise.setFailure(cause);
+                    } else {
+                        promise.registered();
+                        doResolveAndConnect0(channel, remoteAddress, localAddress, promise);
+                    }
+                }
+            });
+            return promise;
+        }
+    }
+```
+
+doResolveAndConnect0方法：
+1.获取线程池的地址转换器，如果支持远程地址或意见解析调用doConnect
+2.解析未完成，则加入监听器，解析完成后调用doConnect
+```
+ private ChannelFuture doResolveAndConnect0(final Channel channel, SocketAddress remoteAddress,
+                                               final SocketAddress localAddress, final ChannelPromise promise) {
+        try {
+            final EventLoop eventLoop = channel.eventLoop();
+            //resolver 用来将eventloop转为地址
+            final AddressResolver<SocketAddress> resolver = this.resolver.getResolver(eventLoop);
+            //如果
+            if (!resolver.isSupported(remoteAddress) || resolver.isResolved(remoteAddress)) {
+                doConnect(remoteAddress, localAddress, promise);
+                return promise;
+            }
+            //reoslver的
+            final Future<SocketAddress> resolveFuture = resolver.resolve(remoteAddress);
+            if (resolveFuture.isDone()) {
+                final Throwable resolveFailureCause = resolveFuture.cause();
+
+                if (resolveFailureCause != null) {
+                    // Failed to resolve immediately
+                    channel.close();
+                    promise.setFailure(resolveFailureCause);
+                } else {
+                    // Succeeded to resolve immediately; cached? (or did a blocking lookup)
+                    doConnect(resolveFuture.getNow(), localAddress, promise);
+                }
+                return promise;
+            }
+
+            // Wait until the name resolution is finished.
+            resolveFuture.addListener(new FutureListener<SocketAddress>() {
+                @Override
+                public void operationComplete(Future<SocketAddress> future) throws Exception {
+                    if (future.cause() != null) {
+                        channel.close();
+                        promise.setFailure(future.cause());
+                    } else {
+                        doConnect(future.getNow(), localAddress, promise);
+                    }
+                }
+            });
+        } catch (Throwable cause) {
+            promise.tryFailure(cause);
+        }
+        return promise;
+    }
+```
+doConnect
+将连接任务提交到线程池，内部调用channel的connect方法。
+```
+private static void doConnect(
+            final SocketAddress remoteAddress, final SocketAddress localAddress, final ChannelPromise connectPromise) {
+        final Channel channel = connectPromise.channel();
+        channel.eventLoop().execute(new Runnable() {
+            @Override
+            public void run() {
+                if (localAddress == null) {
+                    channel.connect(remoteAddress, connectPromise);
+                } else {
+                    channel.connect(remoteAddress, localAddress, connectPromise);
+                }
+                connectPromise.addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+            }
+        });
+    }
+```
+## 3. 总结
+
+过程图1
+过程图2
+
+## 4. 补充
 
 ### AddressResolverGroup
 
 ### Pipeline及ChanndelHandler
 
-### 
+### Future和Promise
 
 
