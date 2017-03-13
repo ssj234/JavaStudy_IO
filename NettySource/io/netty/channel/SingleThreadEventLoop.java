@@ -83,6 +83,7 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
         //调用AbstractChannel的register方法
         // unsafe在初始化时，构造方法  AbstractNioMessageChannel return new NioMessageUnsafe();
         // NioMessageUnsafe也是channel啊... register在AbstractChannel
+        //
         promise.channel().unsafe().register(this, promise);
         return promise;
     }
