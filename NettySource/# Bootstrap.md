@@ -123,7 +123,7 @@ try{
             }           
         });
 ```
-上述代理，与ServerBootstrap不同，没有为childchannel，因为其channel就是于服务器的子channel
+上述代理，与ServerBootstrap不同，没有为childchannel，因为其channel就是服务器的子channel
 
 ### 总结
 
@@ -137,7 +137,7 @@ try{
 ### ServerBootstrap
 
 **>bind方法**
-首先，来看看服务器启动器的启动代码，b.bind(port)，后续会调用doBind方法
+首先，来看看服务器启动器的启动代码 ，首先调用initAndRegister，返回一个注册promise，之后如果mise成功则调用doBind0否则加入promise的监听事件等待完成后调用doBind方法
 
 ```
 private ChannelFuture doBind(final SocketAddress localAddress) {
@@ -412,7 +412,7 @@ private void callHandlerAddedForAllHandlers() {
         }
     }
 ```
-register之前，加入链表，注册后调用执行initChannel方法
+在channel注册到线程池组和selector之前，addList到pipleline时会加入链表，注册后调用执行initChannel方法
 ```
 // newCtx返回的是AbstractChannelHandlerContext
 newCtx = newContext(group, name, handler);
@@ -482,12 +482,11 @@ public ChannelFuture connect(SocketAddress remoteAddress) {
         if (remoteAddress == null) {
             throw new NullPointerException("remoteAddress");
         }
-
         validate();
         return doResolveAndConnect(remoteAddress, config.localAddress());
     }
 ```
-doResolveAndConnect
+**connect > doResolveAndConnect**
 1.调用initAndRegister()，与ServerBootstrap的initAndRegister方法一样，主要是为了初始化channel，并注册到线程池和pipeline中。不同的是init方不同，Bootstrap的init方法只需要设置option和attr。
 2.调用doResolveAndConnect0方法
 
@@ -522,12 +521,12 @@ private ChannelFuture doResolveAndConnect(final SocketAddress remoteAddress, fin
     }
 ```
 
-doResolveAndConnect0方法：
+**connect > doResolveAndConnect > doResolveAndConnect0**
 1.获取线程池的地址转换器，如果支持远程地址或意见解析调用doConnect
 2.解析未完成，则加入监听器，解析完成后调用doConnect
 ```
  private ChannelFuture doResolveAndConnect0(final Channel channel, SocketAddress remoteAddress,
-                                               final SocketAddress localAddress, final ChannelPromise promise) {
+       final SocketAddress localAddress, final ChannelPromise promise) {
         try {
             final EventLoop eventLoop = channel.eventLoop();
             //resolver 用来将eventloop转为地址
@@ -571,7 +570,7 @@ doResolveAndConnect0方法：
         return promise;
     }
 ```
-doConnect
+**channel > doConnect**
 将连接任务提交到线程池，内部调用channel的connect方法。
 ```
 private static void doConnect(
@@ -583,6 +582,7 @@ private static void doConnect(
                 if (localAddress == null) {
                     channel.connect(remoteAddress, connectPromise);
                 } else {
+                    //channel的connect
                     channel.connect(remoteAddress, localAddress, connectPromise);
                 }
                 connectPromise.addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
@@ -590,6 +590,372 @@ private static void doConnect(
         });
     }
 ```
+channel的connection方法会调用pipeline的connect方法，会从tail出发，查找outbound，，最终达到HeadContext，调用HeadContext的connect
+
+```
+//调用1.AbstractChannel中
+public ChannelFuture connect(SocketAddress remoteAddress, ChannelPromise promise) {
+        return pipeline.connect(remoteAddress, promise);
+}
+//调用2.pipeline的connect
+public final ChannelFuture connect(SocketAddress remoteAddress, ChannelPromise promise) {
+        return tail.connect(remoteAddress, promise);
+    }
+//调用3.channelHandler都被包装在AbstractChannelHandlerContext中，tail时内部类
+public ChannelFuture connect(
+            final SocketAddress remoteAddress, final SocketAddress localAddress, final ChannelPromise promise) {
+        if (remoteAddress == null) {
+            throw new NullPointerException("remoteAddress");
+        }
+        if (!validatePromise(promise, false)) {
+            // cancelled
+            return promise;
+        }
+        //1.从tail开始查找outbound，会调用其invokeConnect
+        final AbstractChannelHandlerContext next = findContextOutbound();
+        EventExecutor executor = next.executor();
+        if (executor.inEventLoop()) {
+            next.invokeConnect(remoteAddress, localAddress, promise);
+        } else {
+            safeExecute(executor, new Runnable() {
+                @Override
+                public void run() {
+                    next.invokeConnect(remoteAddress, localAddress, promise);
+                }
+            }, promise, null);
+        }
+        return promise;
+    }
+//调用4.outbound的ChannelHandler的invokeConnect,最终会调用HeadContext的，内部会调用connect方法
+private void invokeConnect(SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise) {
+        if (invokeHandler()) {
+            try {
+                ((ChannelOutboundHandler) handler()).connect(this, remoteAddress, localAddress, promise);
+            } catch (Throwable t) {
+                notifyOutboundHandlerException(t, promise);
+            }
+        } else {
+            connect(remoteAddress, localAddress, promise);
+        }
+    }
+//调用5.HeadContext的connect
+public void connect(
+                ChannelHandlerContext ctx,
+                SocketAddress remoteAddress, SocketAddress localAddress,
+                ChannelPromise promise) throws Exception {
+            unsafe.connect(remoteAddress, localAddress, promise);
+        }
+```
+
+***AbstractNioUnsafe***
+ unsafe的connect是连接的主要实现：
+ 调用doConnect，
+```
+public final void connect(
+final SocketAddress remoteAddress, final SocketAddress localAddress, final ChannelPromise promise) {
+            if (!promise.setUncancellable() || !ensureOpen(promise)) {
+                return;
+            }
+            try {
+                if (connectPromise != null) {
+                    // Already a connect in process.
+                    throw new ConnectionPendingException();
+                }
+
+                boolean wasActive = isActive();
+                //1.doConnect是抽象方法，
+                if (doConnect(remoteAddress, localAddress)) {
+                    fulfillConnectPromise(promise, wasActive);
+                } else {
+                    connectPromise = promise;
+                    requestedRemoteAddress = remoteAddress;
+
+                    // Schedule connect timeout.
+                    int connectTimeoutMillis = config().getConnectTimeoutMillis();
+                    if (connectTimeoutMillis > 0) {
+                        connectTimeoutFuture = eventLoop().schedule(new Runnable() {
+                            @Override
+                            public void run() {
+                                ChannelPromise connectPromise = AbstractNioChannel.this.connectPromise;
+                                ConnectTimeoutException cause =
+                                        new ConnectTimeoutException("connection timed out: " + remoteAddress);
+                                if (connectPromise != null && connectPromise.tryFailure(cause)) {
+                                    close(voidPromise());
+                                }
+                            }
+                        }, connectTimeoutMillis, TimeUnit.MILLISECONDS);
+                    }
+
+                    promise.addListener(new ChannelFutureListener() {
+                        @Override
+                        public void operationComplete(ChannelFuture future) throws Exception {
+                            if (future.isCancelled()) {
+                                if (connectTimeoutFuture != null) {
+                                    connectTimeoutFuture.cancel(false);
+                                }
+                                connectPromise = null;
+                                close(voidPromise());
+                            }
+                        }
+                    });
+                }
+            } catch (Throwable t) {
+                promise.tryFailure(annotateConnectException(t, remoteAddress));
+                closeIfClosed();
+            }
+        }
+```
+
+***NioSocketChannel > doConnect的实现***
+如果设置了本地地址，则绑定；
+调用javachannel的connect方，这是一个非阻塞方法，连接失败会返回false，然后使用注册是调用的doRegister返回的selectKey，为其设置SelectionKey.OP_CONNECT事件。
+后续EventLoop会不断select，如果连接完毕，会对连接事件进行处理。
+根据nio的api，如果此通道处于非阻塞模式，则调用此方法会发起一个非阻塞连接操作。如果立即建立连接（使用本地连接时就是如此），则此方法返回 true。否则此方法返回 false，并且必须在以后通过调用 finishConnect 方法来完成该连接操作。 
+
+```
+protected boolean doConnect(SocketAddress remoteAddress, SocketAddress localAddress) throws Exception {
+        if (localAddress != null) {//1.如果设置了本地地址，则绑定
+            doBind0(localAddress);
+        }
+        boolean success = false;
+        try {
+            //2.连接
+            boolean connected = javaChannel().connect(remoteAddress);
+            if (!connected) {//3.将此键的interest集合设置为给定值
+                selectionKey().interestOps(SelectionKey.OP_CONNECT);
+            }
+            success = true;
+            return connected;
+        } finally {
+            if (!success) {
+                doClose();
+            }
+        }
+    }
+//doRegister时候注册的
+selectionKey = javaChannel().register(eventLoop().selector, 0, this);
+```
+
+### NioEventLoop获取连接事件
+
+NioEventLoop的细节不在此进行叙述，其会一直不断的select获取准备就绪的通道，由于上面我们已经注册了OP_CONNECTION，连接成功会调用processSelectedKeys();方法，由于netty默认会对select进行优化，会调用processSelectedKeysOptimized
+```
+if (a instanceof AbstractNioChannel) {
+    processSelectedKey(k, (AbstractNioChannel) a);
+} 
+```
+
+**processSelectedKey处理select的所有事件**
+首先判断是否有效，键在创建时是有效的，并在被取消、其通道已关闭或者其选择器已关闭之前保持有效。 
+清除key的OP_CONNECT事件，调用unsafe的finishConnect，会完成连接操作
+```
+private void processSelectedKey(SelectionKey k, AbstractNioChannel ch) {
+        final AbstractNioChannel.NioUnsafe unsafe = ch.unsafe();
+        //键在创建时是有效的，并在被取消、其通道已关闭或者其选择器已关闭之前保持有效。 
+        if (!k.isValid()) {
+            final EventLoop eventLoop;
+            try {
+                eventLoop = ch.eventLoop();
+            } catch (Throwable ignored) {
+                return;
+            }
+            if (eventLoop != this || eventLoop == null) {
+                return;
+            }
+            unsafe.close(unsafe.voidPromise());
+            return;
+        }
+
+        try {
+            int readyOps = k.readyOps();//获取此键的 ready 操作集合
+            //连接
+            if ((readyOps & SelectionKey.OP_CONNECT) != 0) {
+                //将key的OP_CONNECT清除
+                int ops = k.interestOps();
+                ops &= ~SelectionKey.OP_CONNECT;
+                k.interestOps(ops);
+                unsafe.finishConnect();
+            }
+
+            //写操作
+            if ((readyOps & SelectionKey.OP_WRITE) != 0) {
+                ch.unsafe().forceFlush();
+            }
+            //读或接受连接
+            if ((readyOps & (SelectionKey.OP_READ | SelectionKey.OP_ACCEPT)) != 0 || readyOps == 0) {
+                unsafe.read();
+                if (!ch.isOpen()) {
+                    return;
+                }
+            }
+        } catch (CancelledKeyException ignored) {
+            unsafe.close(unsafe.voidPromise());
+        }
+    }
+```
+
+**finishConnect 完成连接**
+逻辑为：调用javaChannel().finishConnect()完成连接，通过promise连接完成。
+```
+public final void finishConnect() {
+            assert eventLoop().inEventLoop();
+
+            try {
+                boolean wasActive = isActive();
+                doFinishConnect();//调用!javaChannel().finishConnect()
+                fulfillConnectPromise(connectPromise, wasActive);
+            } catch (Throwable t) {
+                fulfillConnectPromise(connectPromise, annotateConnectException(t, requestedRemoteAddress));
+            } finally {
+                // Check for null as the connectTimeoutFuture is only created if a connectTimeoutMillis > 0 is used
+                // See https://github.com/netty/netty/issues/1770
+                if (connectTimeoutFuture != null) {
+                    connectTimeoutFuture.cancel(false);
+                }
+                connectPromise = null;
+            }
+        }
+```
+**通知promise连接完成**
+会触发pipeline的fireChannelActive事件
+```
+private void fulfillConnectPromise(ChannelPromise promise, boolean wasActive) {
+            if (promise == null) {
+                return;
+            }
+            boolean active = isActive();
+            boolean promiseSet = promise.trySuccess();
+            if (!wasActive && active) {
+                pipeline().fireChannelActive();
+            }
+
+            // If a user cancelled the connection attempt, close the channel, which is followed by channelInactive().
+            if (!promiseSet) {
+                close(voidPromise());
+            }
+        }
+```
+
+如此，client端连接完成。
+
+### 服务器端连接
+根据上面的分析，会执行unsafe.read()，对于NioServerSocketChannel来说，其unsafe为NioMessageUnsafe,其逻辑为：
+* 获取RecvByteBufAllocator.Handle，时AdaptiveRecvByteBufAllocator.HandleImpl,并重置参数
+* 调用doReadMessages，主要是调用javachannel的accept方法
+* 调用接受缓冲分配器的incMessagesRead，将totalMessages加1，继续读，直到没有数据
+* 触发pipeline的ChannelRead方法
+* 清除缓存，触发readComplete()
+* 
+```
+public void read() {
+            assert eventLoop().inEventLoop();
+            final ChannelConfig config = config();
+            final ChannelPipeline pipeline = pipeline();
+            //1. 获取分配处理器
+            final RecvByteBufAllocator.Handle allocHandle = unsafe().recvBufAllocHandle();
+            //1.1.重置相关参数
+            allocHandle.reset(config);
+
+            boolean closed = false;
+            Throwable exception = null;
+            try {
+                try {
+                    do {// 一直读，知道没有数据了
+                        //2.将read的消息读取到readBuf
+                        int localRead = doReadMessages(readBuf);
+                        if (localRead == 0) {
+                            break;
+                        }
+                        if (localRead < 0) {
+                            closed = true;
+                            break;
+                        }
+                        //3. 调用处理器的incMessagesRead
+                        allocHandle.incMessagesRead(localRead);
+                    } while (allocHandle.continueReading());
+                } catch (Throwable t) {
+                    exception = t;
+                }
+
+                int size = readBuf.size();
+                for (int i = 0; i < size; i ++) {
+                    readPending = false;
+                    //4.触发pipeline的channelRead()
+                    pipeline.fireChannelRead(readBuf.get(i));
+                }
+                readBuf.clear();//清除buf
+                allocHandle.readComplete();
+                //5.触发readComplete()
+                pipeline.fireChannelReadComplete();
+
+                if (exception != null) {
+                    closed = closeOnReadError(exception);
+
+                    pipeline.fireExceptionCaught(exception);
+                }
+
+                if (closed) {
+                    inputShutdown = true;
+                    if (isOpen()) {
+                        close(voidPromise());
+                    }
+                }
+            } finally {
+                if (!readPending && !config.isAutoRead()) {
+                    removeReadOp();
+                }
+            }
+        }
+```
+
+***RecvByteBufAllocator.Handle***
+unsafe的recvBufAllocHandle会获取启动器的config的请求缓存分配器，如果不知道的话，默认为AdaptiveRecvByteBufAllocator，newHandle()会返回一个AdaptiveRecvByteBufAllocator.HandleImpl
+```
+public RecvByteBufAllocator.Handle recvBufAllocHandle() {
+            if (recvHandle == null) {
+                recvHandle = config().getRecvByteBufAllocator().newHandle();
+            }
+            return recvHandle;
+        }
+//默认设置了AdaptiveRecvByteBufAllocator
+public DefaultChannelConfig(Channel channel) {
+        this(channel, new AdaptiveRecvByteBufAllocator());
+    }
+//创建处理器
+public Handle newHandle() {
+        return new HandleImpl(minIndex, maxIndex, initial);
+    }
+```
+
+***doReadMessages***
+调用javachannel的accept方法接收请求，加入buf
+```
+protected int doReadMessages(List<Object> buf) throws Exception {
+        //接受请求，如果无连接，会返回null，有则阻塞返回channel
+        SocketChannel ch = javaChannel().accept();
+
+        try {
+            if (ch != null) {//不为空，则创建NioSocketChannel，加入buf
+                buf.add(new NioSocketChannel(this, ch));
+                return 1;
+            }
+        } catch (Throwable t) {
+            logger.warn("Failed to create a new channel from an accepted socket.", t);
+
+            try {
+                ch.close();
+            } catch (Throwable t2) {
+                logger.warn("Failed to close a socket.", t2);
+            }
+        }
+
+        return 0;
+    }
+```
+
+
+
+
 ## 3. 总结
 
 过程图1
@@ -600,7 +966,5 @@ private static void doConnect(
 ### AddressResolverGroup
 
 ### Pipeline及ChanndelHandler
-
-### Future和Promise
 
 
