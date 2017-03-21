@@ -42,9 +42,10 @@ import static io.netty.util.internal.MathUtil.isOutOfBounds;
  * A skeletal implementation of a buffer.
  */
 public abstract class AbstractByteBuf extends ByteBuf {
+    //记录日志
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(AbstractByteBuf.class);
     private static final String PROP_MODE = "io.netty.buffer.bytebuf.checkAccessible";
-    private static final boolean checkAccessible;
+    private static final boolean checkAccessible;//是否需要检查泄露
 
     static {
         checkAccessible = SystemPropertyUtil.getBoolean(PROP_MODE, true);
@@ -53,15 +54,17 @@ public abstract class AbstractByteBuf extends ByteBuf {
         }
     }
 
+    // 泄露检测器
     static final ResourceLeakDetector<ByteBuf> leakDetector =
             ResourceLeakDetectorFactory.instance().newResourceLeakDetector(ByteBuf.class);
 
-    int readerIndex;
-    int writerIndex;
-    private int markedReaderIndex;
-    private int markedWriterIndex;
-    private int maxCapacity;
+    int readerIndex; //读指针
+    int writerIndex; //写指针
+    private int markedReaderIndex; //记录读指针
+    private int markedWriterIndex; //记录写指针
+    private int maxCapacity; // 最大的容量
 
+    // 构造方法是protected的，可以指定最大容量
     protected AbstractByteBuf(int maxCapacity) {
         if (maxCapacity < 0) {
             throw new IllegalArgumentException("maxCapacity: " + maxCapacity + " (expected: >= 0)");
@@ -98,7 +101,7 @@ public abstract class AbstractByteBuf extends ByteBuf {
     }
 
     @Override
-    public ByteBuf readerIndex(int readerIndex) {
+    public ByteBuf readerIndex(int readerIndex) { //设置readindex
         if (readerIndex < 0 || readerIndex > writerIndex) {
             throw new IndexOutOfBoundsException(String.format(
                     "readerIndex: %d (expected: 0 <= readerIndex <= writerIndex(%d))", readerIndex, writerIndex));
@@ -207,9 +210,11 @@ public abstract class AbstractByteBuf extends ByteBuf {
         }
 
         if (readerIndex != writerIndex) {
+            //setBytes这个方法是抽象类，需要由子类实现,从src的srcIndex到length拷贝到index其实位置
+            //setBytes(int index, ByteBuf src, int srcIndex, int length);
             setBytes(0, this, readerIndex, writerIndex - readerIndex);
             writerIndex -= readerIndex;
-            adjustMarkers(readerIndex);
+            adjustMarkers(readerIndex);//由于修改了index，需要修改mark的值
             readerIndex = 0;
         } else {
             adjustMarkers(readerIndex);
@@ -1401,6 +1406,7 @@ public abstract class AbstractByteBuf extends ByteBuf {
     /**
      * Should be called by every method that tries to access the buffers content to check
      * if the buffer was released before.
+     * 每个方法都访问buffer内容之前都需要调用该方法，检查泄露
      */
     protected final void ensureAccessible() {
         if (checkAccessible && refCnt() == 0) {
